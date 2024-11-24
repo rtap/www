@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RTSP Metadata Viewer</title>
+    <style>
+        .container {
+            display: flex;
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .metadata-panel {
+            flex: 1;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            max-width: 500px;
+        }
+
+        .metadata-item {
+            background: white;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .metadata-timestamp {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .metadata-content {
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        .controls button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            background: #2196F3;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .controls button:hover {
+            background: #1976D2;
+        }
+
+        .settings {
+            margin-bottom: 20px;
+        }
+
+        .settings input {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="metadata-panel">
+        <div class="settings">
+            <input type="text" id="rtspUrl" placeholder="RTSP URL" value="rtsp://example.com/stream" />
+            <button onclick="connectToStream()">Connect</button>
+        </div>
+
+        <div class="controls">
+            <button onclick="startMetadataStream()">Start Stream</button>
+            <button onclick="stopMetadataStream()">Stop Stream</button>
+            <button onclick="clearMetadata()">Clear</button>
+        </div>
+
+        <div id="metadataContainer"></div>
+    </div>
+</div>
+<div id="status" class="status disconnected">Disconnected</div>
+
+<script>
+    class RTSPMetadataClient {
+        constructor(config) {
+            this.config = {
+                maxMetadataItems: 50,
+                updateInterval: 1000,
+                ...config
+            };
+
+            this.metadataContainer = document.getElementById('metadataContainer');
+            this.statusElement = document.getElementById('status');
+            this.ws = null;
+            this.connected = false;
+            this.streaming = false;
+            this.metadataBuffer = [];
+        }
+
+        connect(url) {
+            // Użycie natywnego protokołu RTSP przez WebSocket
+            const wsUrl = `ws://${new URL(url).host}/rtsp-metadata`;
+
+            try {
+                this.ws = new WebSocket(wsUrl);
+
+                this.ws.onopen = () => {
+                    this.connected = true;
+                    this.updateStatus('connected');
+
+                    // Wysłanie konfiguracji RTSP
+                    this.ws.send(JSON.stringify({
+                        type: 'SETUP',
+                        url: url,
+                        parameters: {
+                            metadata_only: true,
+                            keep_alive: true
+                        }
+                    }));
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMetadata(data);
+                    } catch (e) {
+                        console.error('Error parsing metadata:', e);
+                    }
+                };
+
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateStatus('disconnected');
+                };
+
+                this.ws.onclose = () => {
+                    this.connected = false;
+                    this.updateStatus('disconnected');
+                    // Próba ponownego połączenia
+                    setTimeout(() => {
+                        if (!this.connected) this.connect(url);
+                    }, 5000);
+                };
+            } catch (e) {
+                console.error('Connection error:', e);
+            }
+        }
+
+        handleMetadata(metadata) {
+            // Dodanie timestampu
+            metadata.receivedAt = Date.now();
+
+            // Dodanie do bufora
+            this.metadataBuffer.unshift(metadata);
+
+            // Ograniczenie rozmiaru bufora
+            if (this.metadataBuffer.length > this.config.maxMetadataItems) {
+                this.metadataBuffer.pop();
+            }
+
+            // Aktualizacja UI
+            this.updateMetadataUI();
+        }
+
+        updateMetadataUI() {
+            // Wyczyszczenie kontenera
+            this.metadataContainer.innerHTML = '';
+
+            // Dodanie nowych elementów
+            this.metadataBuffer.forEach(metadata => {
+                const item = document.createElement('div');
+                item.className = 'metadata-item';
+
+                const timestamp = document.createElement('div');
+                timestamp.className = 'metadata-timestamp';
+                timestamp.textContent = new Date(metadata.receivedAt).toISOString();
+
+                const content = document.createElement('div');
+                content.className = 'metadata-content';
+                content.textContent = JSON.stringify(metadata.data, null, 2);
+
+                item.appendChild(timestamp);
+                item.appendChild(content);
+                this.metadataContainer.appendChild(item);
+            });
+        }
+
+        updateStatus(status) {
+            this.statusElement.className = `status ${status}`;
+            this.statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        }
+
+        startStream() {
+            if (!this.connected) return;
+
+            this.streaming = true;
+            this.ws.send(JSON.stringify({
+                type: 'PLAY',
+                parameters: {
+                    metadata_only: true
+                }
+            }));
+        }
+
+        stopStream() {
+            if (!this.connected) return;
+
+            this.streaming = false;
+            this.ws.send(JSON.stringify({
+                type: 'PAUSE'
+            }));
+        }
+
+        clearMetadata() {
+            this.metadataBuffer = [];
+            this.updateMetadataUI();
+        }
+
+        disconnect() {
+            if (this.ws) {
+                this.ws.close();
+                this.ws = null;
+            }
+            this.connected = false;
+            this.streaming = false;
+        }
+    }
+
+    // Globalne instancje i funkcje
+    let rtspClient;
+
+    function connectToStream() {
+        const url = document.getElementById('rtspUrl').value;
+        if (rtspClient) {
+            rtspClient.disconnect();
+        }
+        rtspClient = new RTSPMetadataClient({
+            maxMetadataItems: 50,
+            updateInterval: 1000
+        });
+        rtspClient.connect(url);
+    }
+
+    function startMetadataStream() {
+        if (rtspClient) {
+            rtspClient.startStream();
+        }
+    }
+
+    function stopMetadataStream() {
+        if (rtspClient) {
+            rtspClient.stopStream();
+        }
+    }
+
+    function clearMetadata() {
+        if (rtspClient) {
+            rtspClient.clearMetadata();
+        }
+    }
+
+    // Automatyczne połączenie przy starcie
+    document.addEventListener('DOMContentLoaded', connectToStream);
+</script>
+</body>
+</html>
