@@ -10,3 +10,7 @@ pip install python-dotenv opencv-python websockets
 #nodejs
 npm install ws node-rtsp-stream express cors
 npm install dotenv ws node-rtsp-stream express cors
+npm install winston
+sudo apt-get update
+sudo apt-get install ffmpeg
+npm install node-rtsp-stream winston
