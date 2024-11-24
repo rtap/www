@@ -11,6 +11,7 @@ def stream_video_to_rtsp():
     vlc_instance = vlc.Instance()
     media_player = vlc_instance.media_player_new()
     media = vlc_instance.media_new('input.mp4')
+    # media = vlc_instance.media_new('meta.mp4')
 
     # Configure RTP/RTSP Stream Output
     #media.add_option("sout=#rtp{mux=ts,dst=127.0.0.1,port=8554,sdp=rtsp://127.0.0.1:8554/stream}")

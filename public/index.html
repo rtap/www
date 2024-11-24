@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RTSP Metadata Viewer</title>
+    <style>
+        .container {
+            display: flex;
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .metadata-panel {
+            flex: 1;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            max-width: 800px;
+        }
+
+        .metadata-item {
+            background: white;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .metadata-timestamp {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 5px;
+            font-family: monospace;
+        }
+
+        .metadata-content {
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background: #e0e0e0;
+        }
+
+        .controls button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .error {
+            color: #f44336;
+            margin: 10px 0;
+            padding: 10px;
+            background: #ffebee;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="metadata-panel">
+        <div class="settings">
+            <input type="text" id="rtspUrl"
+                   placeholder="RTSP URL"
+                   value="rtsp://192.168.188.226:8554/stream"
+                   style="width: 300px; padding: 8px; margin-right: 10px;" />
+            <button onclick="connectToStream()">Connect</button>
+        </div>
+
+        <div class="status" id="connectionStatus">Disconnected</div>
+
+        <div class="controls">
+            <button onclick="startMetadataStream()">Start Stream</button>
+            <button onclick="stopMetadataStream()">Stop Stream</button>
+            <button onclick="clearMetadata()">Clear</button>
+        </div>
+
+        <div id="metadataContainer"></div>
+    </div>
+</div>
+
+<script>
+    class RTSPMetadataClient {
+        constructor() {
+            this.ws = null;
+            this.connected = false;
+            this.metadataContainer = document.getElementById('metadataContainer');
+            this.connectionStatus = document.getElementById('connectionStatus');
+            this.wsUrl = `ws://${window.location.hostname}:5001/ws`;
+        }
+
+        connect(rtspUrl) {
+            console.log(`Connecting to WebSocket: ${this.wsUrl}`);
+            console.log(`RTSP URL: ${rtspUrl}`);
+
+            try {
+                this.ws = new WebSocket(this.wsUrl);
+
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.connected = true;
+                    this.updateStatus('Connected');
+
+                    this.ws.send(JSON.stringify({
+                        type: 'SETUP',
+                        rtspUrl: rtspUrl
+                    }));
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                        this.showError('Error parsing message: ' + e.message);
+                    }
+                };
+
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateStatus('Error');
+                    this.showError('WebSocket error occurred');
+                };
+
+                this.ws.onclose = () => {
+                    console.log('WebSocket closed');
+                    this.connected = false;
+                    this.updateStatus('Disconnected');
+
+                    setTimeout(() => {
+                        if (!this.connected) {
+                            this.connect(rtspUrl);
+                        }
+                    }, 5000);
+                };
+            } catch (e) {
+                console.error('Connection error:', e);
+                this.showError('Connection error: ' + e.message);
+            }
+        }
+
+        handleMessage(data) {
+            if (data.type === 'metadata') {
+                this.displayMetadata(data);
+            } else if (data.type === 'status') {
+                this.updateStatus(data.status);
+            } else if (data.type === 'error') {
+                this.showError(data.message);
+            }
+        }
+
+        displayMetadata(data) {
+            const metadataDiv = document.createElement('div');
+            metadataDiv.className = 'metadata-item';
+
+            // Bezpieczne formatowanie timestamp
+            const timestamp = this.formatTimestamp(data.data.timestamp);
+
+            metadataDiv.innerHTML = `
+                    <div class="metadata-timestamp">${timestamp}</div>
+                    <pre class="metadata-content">${this.formatMetadata(data.data)}</pre>
+                `;
+
+            this.metadataContainer.insertBefore(metadataDiv, this.metadataContainer.firstChild);
+
+            // Ograniczenie liczby wyświetlanych elementów
+            while (this.metadataContainer.children.length > 50) {
+                this.metadataContainer.removeChild(this.metadataContainer.lastChild);
+            }
+        }
+
+        formatTimestamp(timestamp) {
+            try {
+                if (typeof timestamp === 'number') {
+                    return new Date(timestamp).toISOString();
+                } else if (typeof timestamp === 'string') {
+                    return new Date(timestamp).toISOString();
+                } else {
+                    return new Date().toISOString();
+                }
+            } catch (e) {
+                console.error('Error formatting timestamp:', e);
+                return new Date().toISOString();
+            }
+        }
+
+        formatMetadata(metadata) {
+            try {
+                return JSON.stringify(metadata, null, 2);
+            } catch (e) {
+                console.error('Error formatting metadata:', e);
+                return 'Error formatting metadata';
+            }
+        }
+
+        updateStatus(status) {
+            this.connectionStatus.textContent = status;
+            this.connectionStatus.className = 'status ' + status.toLowerCase();
+        }
+
+        showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            this.metadataContainer.insertBefore(errorDiv, this.metadataContainer.firstChild);
+
+            // Automatyczne usuwanie błędu po 5 sekundach
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 5000);
+        }
+
+        startStream() {
+            if (this.connected) {
+                this.ws.send(JSON.stringify({ type: 'PLAY' }));
+            } else {
+                this.showError('Not connected');
+            }
+        }
+
+        stopStream() {
+            if (this.connected) {
+                this.ws.send(JSON.stringify({ type: 'PAUSE' }));
+            }
+        }
+
+        clearMetadata() {
+            this.metadataContainer.innerHTML = '';
+        }
+    }
+
+    let client;
+
+    function connectToStream() {
+        const rtspUrl = document.getElementById('rtspUrl').value;
+        if (!rtspUrl) {
+            alert('Please enter RTSP URL');
+            return;
+        }
+
+        if (client) {
+            client.ws?.close();
+        }
+
+        client = new RTSPMetadataClient();
+        client.connect(rtspUrl);
+    }
+
+    function startMetadataStream() {
+        if (client) client.startStream();
+    }
+
+    function stopMetadataStream() {
+        if (client) client.stopStream();
+    }
+
+    function clearMetadata() {
+        if (client) client.clearMetadata();
+    }
+</script>
+</body>
+</html>

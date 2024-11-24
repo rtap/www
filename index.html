@@ -3,6 +3,7 @@
 <head>
     <title>RTSP Metadata Viewer</title>
     <style>
+        <style>
         .container {
             display: flex;
             margin: 20px;
@@ -87,12 +88,14 @@
             width: 300px;
         }
     </style>
+    </style>
 </head>
 <body>
 <div class="container">
     <div class="metadata-panel">
         <div class="settings">
-            <input type="text" id="rtspUrl" placeholder="RTSP URL" value="rtsp://example.com/stream" />
+            <input type="text" id="rtspUrl" placeholder="RTSP URL" value="rtsp://localhost:8554/stream" />
+            <input type="text" id="wsUrl" placeholder="WebSocket URL" value="ws://localhost:5001/ws" />
             <button onclick="connectToStream()">Connect</button>
         </div>
 
@@ -122,58 +125,81 @@
             this.connected = false;
             this.streaming = false;
             this.metadataBuffer = [];
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = 5;
         }
 
-        connect(url) {
-            // Użycie natywnego protokołu RTSP przez WebSocket
-            const wsUrl = `ws://${new URL(url).host}/rtsp-metadata`;
+        connect(rtspUrl, wsUrl) {
+            if (this.ws) {
+                this.ws.close();
+            }
+
+            console.log('Connecting to WebSocket:', wsUrl);
+            console.log('RTSP URL:', rtspUrl);
 
             try {
                 this.ws = new WebSocket(wsUrl);
 
                 this.ws.onopen = () => {
                     this.connected = true;
+                    this.reconnectAttempts = 0;
                     this.updateStatus('connected');
+                    console.log('WebSocket connected');
 
                     // Wysłanie konfiguracji RTSP
-                    this.ws.send(JSON.stringify({
+                    const setupMessage = {
                         type: 'SETUP',
-                        url: url,
+                        rtspUrl: rtspUrl,
                         parameters: {
                             metadata_only: true,
                             keep_alive: true
                         }
-                    }));
+                    };
+
+                    console.log('Sending setup message:', setupMessage);
+                    this.ws.send(JSON.stringify(setupMessage));
                 };
 
                 this.ws.onmessage = (event) => {
                     try {
+                        console.log('Received message:', event.data);
                         const data = JSON.parse(event.data);
                         this.handleMetadata(data);
                     } catch (e) {
-                        console.error('Error parsing metadata:', e);
+                        console.error('Error parsing metadata:', e, event.data);
                     }
                 };
 
                 this.ws.onerror = (error) => {
                     console.error('WebSocket error:', error);
-                    this.updateStatus('disconnected');
+                    this.updateStatus('error');
                 };
 
-                this.ws.onclose = () => {
+                this.ws.onclose = (event) => {
+                    console.log('WebSocket closed:', event);
                     this.connected = false;
                     this.updateStatus('disconnected');
+
                     // Próba ponownego połączenia
-                    setTimeout(() => {
-                        if (!this.connected) this.connect(url);
-                    }, 5000);
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        this.reconnectAttempts++;
+                        console.log(`Reconnection attempt ${this.reconnectAttempts} of ${this.maxReconnectAttempts}`);
+                        setTimeout(() => {
+                            if (!this.connected) {
+                                this.connect(rtspUrl, wsUrl);
+                            }
+                        }, 5000);
+                    }
                 };
             } catch (e) {
                 console.error('Connection error:', e);
+                this.updateStatus('error');
             }
         }
 
         handleMetadata(metadata) {
+            console.log('Processing metadata:', metadata);
+
             // Dodanie timestampu
             metadata.receivedAt = Date.now();
 
@@ -204,7 +230,7 @@
 
                 const content = document.createElement('div');
                 content.className = 'metadata-content';
-                content.textContent = JSON.stringify(metadata.data, null, 2);
+                content.textContent = JSON.stringify(metadata, null, 2);
 
                 item.appendChild(timestamp);
                 item.appendChild(content);
@@ -215,11 +241,16 @@
         updateStatus(status) {
             this.statusElement.className = `status ${status}`;
             this.statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            console.log('Status updated:', status);
         }
 
         startStream() {
-            if (!this.connected) return;
+            if (!this.connected) {
+                console.log('Cannot start stream: not connected');
+                return;
+            }
 
+            console.log('Starting stream');
             this.streaming = true;
             this.ws.send(JSON.stringify({
                 type: 'PLAY',
@@ -230,8 +261,12 @@
         }
 
         stopStream() {
-            if (!this.connected) return;
+            if (!this.connected) {
+                console.log('Cannot stop stream: not connected');
+                return;
+            }
 
+            console.log('Stopping stream');
             this.streaming = false;
             this.ws.send(JSON.stringify({
                 type: 'PAUSE'
@@ -239,11 +274,13 @@
         }
 
         clearMetadata() {
+            console.log('Clearing metadata');
             this.metadataBuffer = [];
             this.updateMetadataUI();
         }
 
         disconnect() {
+            console.log('Disconnecting');
             if (this.ws) {
                 this.ws.close();
                 this.ws = null;
@@ -257,15 +294,19 @@
     let rtspClient;
 
     function connectToStream() {
-        const url = document.getElementById('rtspUrl').value;
+        const rtspUrl = document.getElementById('rtspUrl').value;
+        const wsUrl = document.getElementById('wsUrl').value;
+
         if (rtspClient) {
             rtspClient.disconnect();
         }
+
         rtspClient = new RTSPMetadataClient({
             maxMetadataItems: 50,
             updateInterval: 1000
         });
-        rtspClient.connect(url);
+
+        rtspClient.connect(rtspUrl, wsUrl);
     }
 
     function startMetadataStream() {
