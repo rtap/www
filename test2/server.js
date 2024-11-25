@@ -1,9 +1,16 @@
+
 // server.js
 import { createCanvas } from 'canvas';
 import NodeMediaServer from 'node-media-server';
 import moment from 'moment';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
+import fs from 'fs';
+
+// Upewnij się, że katalogi istnieją
+if (!fs.existsSync('./media/live')) {
+    fs.mkdirSync('./media/live', { recursive: true });
+}
 
 const config = {
     rtmp: {
@@ -30,14 +37,17 @@ class VideoStreamGenerator extends Readable {
     }
 
     _read() {
-        if (!this.running) return;
+        if (!this.running) {
+            this.push(null);
+            return;
+        }
         this.generateNextFrame();
     }
 
     generateNextFrame() {
-        setTimeout(() => {
-            if (!this.running) return;
+        if (!this.running) return;
 
+        setTimeout(() => {
             try {
                 // Czyszczenie canvas
                 this.ctx.fillStyle = 'black';
@@ -52,7 +62,8 @@ class VideoStreamGenerator extends Readable {
                 const metadata = {
                     timestamp: moment().format('YYYY-MM-DD HH:mm:ss.SSS'),
                     frameNumber: this.frameCount,
-                    objectPosition: { x, y: 200 }
+                    objectPosition: { x, y: 200 },
+                    // random: randomInt(1000, 9999)
                 };
 
                 // Dodanie tekstu metadanych na klatkę
@@ -64,73 +75,50 @@ class VideoStreamGenerator extends Readable {
 
                 const frameBuffer = this.canvas.toBuffer('image/jpeg');
                 this.push(frameBuffer);
-
-                this.generateNextFrame();
             } catch (error) {
                 console.error('Błąd generowania klatki:', error);
-                this.generateNextFrame();
+                this.push(null);
             }
-        }, 333); // ~3 FPS
+        }, 333);
     }
 
     stop() {
         this.running = false;
-        this.push(null);
     }
 }
 
-// Inicjalizacja serwera RTMP
 const nms = new NodeMediaServer(config);
-
-nms.on('preConnect', (id, args) => {
-    console.log('[PreConnect]', `id=${id}`, args);
-});
-
-nms.on('postConnect', (id, args) => {
-    console.log('[PostConnect]', `id=${id}`, args);
-});
-
-nms.on('prePublish', (id, StreamPath, args) => {
-    console.log('[PrePublish]', `id=${id} StreamPath=${StreamPath}`, args);
-});
-
 nms.run();
 
-// Inicjalizacja generatora strumienia
 const streamGenerator = new VideoStreamGenerator();
 
-// Uruchomienie FFmpeg jako osobny proces
-const ffmpeg = spawn('ffmpeg', [
+// Użyj FFmpeg do publikowania strumienia
+const ffmpegPublish = spawn('ffmpeg', [
+    '-re',  // Odtwarzanie z prędkością rzeczywistą
     '-f', 'image2pipe',
     '-framerate', '3',
-    '-i', 'pipe:0',
+    '-i', '-',
     '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
     '-f', 'flv',
-    '-s', '640x480',
-    '-r', '3',
+    '-flvflags', 'no_duration_filesize',
     'rtmp://localhost:1935/live/stream'
 ]);
 
-ffmpeg.stderr.on('data', (data) => {
+ffmpegPublish.stderr.on('data', (data) => {
     console.log('FFmpeg:', data.toString());
 });
 
-ffmpeg.on('error', (error) => {
+ffmpegPublish.on('error', (error) => {
     console.error('FFmpeg error:', error);
 });
 
-ffmpeg.on('exit', (code, signal) => {
-    console.log('FFmpeg zakończył działanie z kodem:', code);
-});
-
-// Podłączenie generatora do FFmpeg
-streamGenerator.pipe(ffmpeg.stdin);
+streamGenerator.pipe(ffmpegPublish.stdin);
 
 process.on('SIGINT', () => {
     console.log('Zatrzymywanie...');
     streamGenerator.stop();
-    ffmpeg.kill();
+    ffmpegPublish.kill();
     nms.stop();
-    process.exit();
 });
-

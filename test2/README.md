@@ -1,0 +1,1 @@
+ffplay rtmp://localhost:1935/live/stream
