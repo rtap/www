@@ -6,6 +6,42 @@ const Stream = require('node-rtsp-stream');
 const { createLogger, format, transports } = require('winston');
 const fs = require('fs');
 
+// Dodaj te konfiguracje do serwera
+const FFMPEG_OPTIONS = {
+    // Podstawowe opcje
+    '-rtsp_transport': 'tcp',
+    '-rtsp_flags': 'prefer_tcp',
+    '-timeout': '5000000',
+
+    // Buforowanie i synchronizacja
+    '-fflags': '+genpts+igndts',
+    '-flags': 'low_delay',
+    '-strict': 'experimental',
+
+    // Dekodowanie H.264
+    '-vcodec': 'h264_ffmpeg',
+    '-tune': 'zerolatency',
+    '-preset': 'ultrafast',
+
+    // Parametry dekodowania
+    '-analyzeduration': '1000000',
+    '-probesize': '1000000',
+    '-thread_queue_size': '512',
+
+    // Parametry wyjściowe
+    '-r': '30',
+    '-g': '30',
+    '-f': 'mpegts',
+    '-codec:v': 'mpeg1video',
+    '-b:v': '1000k',
+    '-maxrate': '1000k',
+    '-bufsize': '2000k',
+
+    // Dodatkowe parametry dekodowania H.264
+    '-max_delay': '0',
+    '-max_muxing_queue_size': '1024',
+};
+
 // Konfiguracja loggera
 const logger = createLogger({
     format: format.combine(
@@ -51,9 +87,211 @@ class RTSPServer {
         if (!fs.existsSync('logs')) {
             fs.mkdirSync('logs');
         }
-
+        this.initFFmpeg();
         this.setupServer();
         this.startPerformanceMonitoring();
+    }
+
+    async initFFmpeg() {
+        try {
+            // Sprawdzenie wersji FFmpeg
+            const { exec } = require('child_process');
+            exec('ffmpeg -version', (error, stdout, stderr) => {
+                if (error) {
+                    logger.error('FFmpeg not found', { error: error.message });
+                    return;
+                }
+                logger.info('FFmpeg version:', { version: stdout.split('\n')[0] });
+            });
+        } catch (error) {
+            logger.error('Error initializing FFmpeg', { error: error.message });
+        }
+    }
+
+    async handleSetup(ws, data, clientId) {
+        logger.info('Setting up stream', {
+            clientId,
+            rtspUrl: data.rtspUrl
+        });
+
+        try {
+            // Test połączenia RTSP
+            await this.testRTSPConnection(data.rtspUrl);
+
+            const streamConfig = {
+                name: `stream_${clientId}`,
+                streamUrl: data.rtspUrl,
+                wsPort: this.getRandomPort(),
+                ffmpegOptions: FFMPEG_OPTIONS
+            };
+
+            // Utworzenie strumienia z obsługą błędów
+            const stream = new Stream(streamConfig);
+
+            // Monitorowanie strumienia
+            this.monitorStream(stream, clientId);
+
+            this.streams.set(clientId, stream);
+
+            // Wysłanie konfiguracji do klienta
+            ws.send(JSON.stringify({
+                type: 'SETUP_SUCCESS',
+                streamPort: streamConfig.wsPort,
+                wsUrl: `ws://localhost:${streamConfig.wsPort}`,
+                config: {
+                    codec: 'h264',
+                    fps: FFMPEG_OPTIONS['-r'],
+                    bitrate: FFMPEG_OPTIONS['-b:v']
+                }
+            }));
+
+            logger.info('Stream setup completed', {
+                clientId,
+                wsPort: streamConfig.wsPort
+            });
+
+        } catch (error) {
+            this.handleStreamError(ws, error, clientId);
+        }
+    }
+
+    monitorStream(stream, clientId) {
+        // Monitorowanie FFmpeg
+        stream.on('ffmpeg_stderr', (data) => {
+            const stderr = data.toString();
+
+            // Analiza błędów H.264
+            if (stderr.includes('non-existing PPS') ||
+                stderr.includes('decode_slice_header error') ||
+                stderr.includes('no frame')) {
+
+                logger.warn('H.264 decoding issue', {
+                    clientId,
+                    error: stderr
+                });
+
+                // Próba naprawy strumienia
+                this.handleDecodingIssue(stream, clientId);
+            }
+
+            // Logowanie innych błędów FFmpeg
+            if (stderr.includes('Error')) {
+                logger.error('FFmpeg error', {
+                    clientId,
+                    error: stderr
+                });
+            }
+        });
+
+        // Monitorowanie danych
+        let frameCount = 0;
+        let lastCheck = Date.now();
+
+        stream.on('data', () => {
+            frameCount++;
+
+            // Sprawdzanie FPS co sekundę
+            if (Date.now() - lastCheck >= 1000) {
+                logger.debug('Stream stats', {
+                    clientId,
+                    fps: frameCount,
+                    timestamp: new Date().toISOString()
+                });
+
+                // Reset liczników
+                frameCount = 0;
+                lastCheck = Date.now();
+            }
+        });
+    }
+
+    async handleDecodingIssue(stream, clientId) {
+        try {
+            logger.info('Attempting to fix decoding issues', { clientId });
+
+            // Zatrzymanie bieżącego strumienia
+            stream.stop();
+
+            // Rekonfiguracja z nowymi parametrami
+            const newOptions = {
+                ...FFMPEG_OPTIONS,
+                '-vcodec': 'h264_ffmpeg', // Wymuszenie dekodera programowego
+                '-skip_frame': 'none',
+                '-vsync': '0',
+                '-async': '1'
+            };
+
+            // Restart strumienia
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            stream.start(newOptions);
+
+            logger.info('Stream restarted with new configuration', { clientId });
+        } catch (error) {
+            logger.error('Failed to fix decoding issues', {
+                clientId,
+                error: error.message
+            });
+        }
+    }
+
+    async testRTSPConnection(url) {
+        return new Promise((resolve, reject) => {
+            const { spawn } = require('child_process');
+
+            const ffprobe = spawn('ffprobe', [
+                '-v', 'error',
+                '-rtsp_transport', 'tcp',
+                '-i', url,
+                '-show_entries', 'stream=codec_name,width,height',
+                '-of', 'json'
+            ]);
+
+            let output = '';
+            let error = '';
+
+            ffprobe.stdout.on('data', (data) => {
+                output += data;
+            });
+
+            ffprobe.stderr.on('data', (data) => {
+                error += data;
+            });
+
+            ffprobe.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const streamInfo = JSON.parse(output);
+                        logger.info('Stream probe successful', {
+                            url,
+                            info: streamInfo
+                        });
+                        resolve(streamInfo);
+                    } catch (e) {
+                        reject(new Error('Invalid stream data'));
+                    }
+                } else {
+                    reject(new Error(`FFprobe failed: ${error}`));
+                }
+            });
+        });
+    }
+
+    handleStreamError(ws, error, clientId) {
+        logger.error('Stream error', {
+            clientId,
+            error: error.message,
+            stack: error.stack
+        });
+
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Stream setup failed: ' + error.message,
+            details: {
+                timestamp: new Date().toISOString(),
+                errorType: error.name,
+                clientId
+            }
+        }));
     }
 
     setupServer() {
@@ -199,146 +437,6 @@ class RTSPServer {
         }
     }
 
-    async handleSetup(ws, data, clientId) {
-        logger.info('Setting up stream', {
-            clientId,
-            rtspUrl: data.rtspUrl
-        });
-
-        try {
-            // Sprawdzenie dostępności RTSP
-            await this.checkRTSPAvailability(data.rtspUrl);
-
-            const streamConfig = {
-                name: `stream_${clientId}`,
-                streamUrl: data.rtspUrl,
-                wsPort: this.getRandomPort(),
-                ffmpegOptions: {
-                    '-rtsp_transport': 'tcp',
-                    '-stats': '',
-                    '-r': 30,
-                    '-q:v': 3,
-                    '-preset': 'ultrafast',
-                    '-tune': 'zerolatency',
-                    '-f': 'mpegts',
-                    '-codec:v': 'mpeg1video',
-                    '-b:v': '800k'
-                }
-            };
-
-            logger.debug('Stream configuration', {
-                clientId,
-                config: streamConfig
-            });
-
-            const stream = new Stream(streamConfig);
-            this.streams.set(clientId, stream);
-
-            // Monitorowanie strumienia
-            stream.on('data', (data) => {
-                const stats = this.clientStats.get(clientId);
-                if (stats) {
-                    stats.bytesTransferred = (stats.bytesTransferred || 0) + data.length;
-                }
-            });
-
-            // Start wysyłania metadanych
-            this.startMetadataStream(ws, clientId, streamConfig);
-
-            logger.info('Stream setup successful', {
-                clientId,
-                wsPort: streamConfig.wsPort
-            });
-
-            ws.send(JSON.stringify({
-                type: 'SETUP_SUCCESS',
-                streamPort: streamConfig.wsPort,
-                wsUrl: `ws://localhost:${streamConfig.wsPort}`
-            }));
-
-        } catch (error) {
-            logger.error('Stream setup failed', {
-                clientId,
-                error: error.message,
-                stack: error.stack
-            });
-
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: error.message
-            }));
-        }
-    }
-
-    async checkRTSPAvailability(url) {
-        logger.debug('Checking RTSP availability', { url });
-
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                logger.warn('RTSP connection timeout', { url });
-                reject(new Error('RTSP connection timeout'));
-            }, 5000);
-
-            const testStream = new Stream({
-                name: 'test',
-                streamUrl: url,
-                wsPort: this.getRandomPort()
-            });
-
-            testStream.on('data', () => {
-                clearTimeout(timeout);
-                testStream.stop();
-                resolve();
-            });
-
-            testStream.on('error', (error) => {
-                clearTimeout(timeout);
-                testStream.stop();
-                logger.error('RTSP test failed', {
-                    url,
-                    error: error.message
-                });
-                reject(error);
-            });
-        });
-    }
-
-    startMetadataStream(ws, clientId, streamConfig) {
-        const interval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-                const stats = this.clientStats.get(clientId);
-                const metadata = {
-                    timestamp: Date.now(),
-                    streamInfo: {
-                        port: streamConfig.wsPort,
-                        format: 'mpeg1',
-                        bitrate: '800k'
-                    },
-                    clientStats: {
-                        uptime: Date.now() - stats.connected,
-                        messagesSent: stats.messagesSent,
-                        messagesReceived: stats.messagesReceived,
-                        errors: stats.errors,
-                        bytesTransferred: stats.bytesTransferred
-                    }
-                };
-
-                stats.messagesSent++;
-                ws.send(JSON.stringify({
-                    type: 'metadata',
-                    data: metadata
-                }));
-
-                logger.debug('Sent metadata', {
-                    clientId,
-                    metadata
-                });
-            }
-        }, 1000);
-
-        // Zapisanie interwału do późniejszego czyszczenia
-        this.clientStats.get(clientId).metadataInterval = interval;
-    }
 
     cleanup(clientId) {
         logger.info('Cleaning up client resources', { clientId });

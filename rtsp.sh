@@ -1,7 +1,7 @@
 #!/bin/bash
 #ffmpeg -re -i meta.mp4 -metadata title="My Awesome Stream" -vcodec libx264 -tune zerolatency -f rtsp -muxdelay 0.1 rtsp://localhost:554/mystream
-ffmpeg -re -i output.mp4 -c:v copy -f rtsp rtsp://127.0.0.1:8554/mystream
-ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://127.0.0.1:8554/mystream
+ffmpeg -re -i output.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
+ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 ffmpeg -re -i meta.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 
@@ -29,12 +29,12 @@ ffmpeg -re -i input.mp4 -c copy -f rtsp rtsp://localhost:8554/yourstream
 # Terminal 2: Start streaming
 ffmpeg -i rtsp://camera.example.com/stream1 -c copy -f rtsp rtsp://localhost:8554/camera1
 
-gst-launch-1.0 -v filesrc location=input.mp4 ! qtdemux ! rtph264pay config-interval=1 pt=96 ! gdppay ! tcpserversink host=127.0.0.1 port=8554
+gst-launch-1.0 -v filesrc location=input.mp4 ! qtdemux ! rtph264pay config-interval=1 pt=96 ! gdppay ! tcpserversink host=localhost port=8554
 
 
 # Terminal 3: Start recording
 #ffmpeg -i rtsp://localhost:8554/yourstream -c copy output.mp4
-gst-launch-1.0 -v filesrc location=input.mp4 ! decodebin ! x264enc ! rtph264pay config-interval=1 pt=96 ! gdppay ! tcpserversink host=127.0.0.1 port=8554
+gst-launch-1.0 -v filesrc location=input.mp4 ! decodebin ! x264enc ! rtph264pay config-interval=1 pt=96 ! gdppay ! tcpserversink host=localhost port=8554
 
 sudo lsof -i :8554
 ffplay rtsp://localhost:8554/mystream
@@ -43,13 +43,13 @@ ffplay rtsp://localhost:8554/mystream
 ffplay rtsp://localhost:8554/yourstream
 rtsp://localhost:8554/camera1
 vlc rtsp://localhost:8554/yourstream
-cvlc rtsp://127.0.0.1:8554/mystream
+cvlc rtsp://localhost:8554/mystream
 
 ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://localhost:8554/yourstream.sdp
 
 
 
 gst-rtsp-server
-gst-launch-1.0 -v filesrc location=input.mp4 ! decodebin ! x264enc tune=zerolatency ! rtph264pay pt=96 config-interval=1 ! gdppay ! udpsink host=127.0.0.1 port=8554
+gst-launch-1.0 -v filesrc location=input.mp4 ! decodebin ! x264enc tune=zerolatency ! rtph264pay pt=96 config-interval=1 ! gdppay ! udpsink host=localhost port=8554
 
 vlc rtsp://localhost:8554/yourstream

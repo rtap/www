@@ -1,6 +1,6 @@
 #!/bin/bash
 netstat -tuln | grep 8554
-telnet 127.0.0.1 8554
+telnet localhost 8554
 
 # Check current firewall settings
 sudo firewall-cmd --list-ports

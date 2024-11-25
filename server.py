@@ -19,6 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class Config:
     def __init__(self):
         self.RTSP_URL = os.getenv('RTSP_URL', 'rtsp://localhost:554/stream')
