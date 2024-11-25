@@ -2,84 +2,135 @@
 import { createCanvas } from 'canvas';
 import NodeMediaServer from 'node-media-server';
 import moment from 'moment';
+import { spawn } from 'child_process';
+import { Readable } from 'stream';
 
-// Konfiguracja serwera RTSP
 const config = {
-    rtsp_server: {
-        port: 5555,
+    rtmp: {
+        port: 1935,
         chunk_size: 60000,
         gop_cache: true,
-        gop_cache_size: 60,
         ping: 30,
         ping_timeout: 60
     },
     http: {
         port: 8008,
+        mediaroot: './media',
         allow_origin: '*'
     }
 };
 
-const nms = new NodeMediaServer(config);
-nms.run();
+class VideoStreamGenerator extends Readable {
+    constructor(options) {
+        super(options);
+        this.canvas = createCanvas(640, 480);
+        this.ctx = this.canvas.getContext('2d');
+        this.frameCount = 0;
+        this.running = true;
+    }
 
-// Generowanie klatek wideo
-const canvas = createCanvas(640, 480);
-const ctx = canvas.getContext('2d');
-let frameCount = 0;
+    _read() {
+        if (!this.running) return;
+        this.generateNextFrame();
+    }
 
-function generateFrame() {
-    // Czyszczenie canvas
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, 640, 480);
+    generateNextFrame() {
+        setTimeout(() => {
+            if (!this.running) return;
 
-    // Rysowanie przykładowego obiektu
-    ctx.fillStyle = 'red';
-    ctx.fillRect(frameCount % 580, 200, 60, 60);
+            try {
+                // Czyszczenie canvas
+                this.ctx.fillStyle = 'black';
+                this.ctx.fillRect(0, 0, 640, 480);
 
-    // Generowanie metadanych
-    const metadata = {
-        timestamp: moment().format('YYYY-MM-DD HH:mm:ss.SSS'),
-        frameNumber: frameCount,
-        imageSize: {
-            width: 640,
-            height: 480
-        },
-        colorInfo: {
-            dominantColor: 'red',
-            brightness: 0.5,
-            contrast: 0.8
-        },
-        detectedObjects: [
-            {
-                type: 'square',
-                position: {
-                    x: frameCount % 580,
-                    y: 200
-                },
-                size: {
-                    width: 60,
-                    height: 60
-                }
+                // Rysowanie czerwonego kwadratu
+                this.ctx.fillStyle = 'red';
+                const x = this.frameCount % 580;
+                this.ctx.fillRect(x, 200, 60, 60);
+
+                // Metadane
+                const metadata = {
+                    timestamp: moment().format('YYYY-MM-DD HH:mm:ss.SSS'),
+                    frameNumber: this.frameCount,
+                    objectPosition: { x, y: 200 }
+                };
+
+                // Dodanie tekstu metadanych na klatkę
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '12px Arial';
+                this.ctx.fillText(JSON.stringify(metadata), 10, 20);
+
+                this.frameCount++;
+
+                const frameBuffer = this.canvas.toBuffer('image/jpeg');
+                this.push(frameBuffer);
+
+                this.generateNextFrame();
+            } catch (error) {
+                console.error('Błąd generowania klatki:', error);
+                this.generateNextFrame();
             }
-        ]
-    };
+        }, 333); // ~3 FPS
+    }
 
-    // Dodawanie metadanych jako tekst na klatkę
-    ctx.fillStyle = 'white';
-    ctx.font = '12px Arial';
-    ctx.fillText(JSON.stringify(metadata), 10, 20);
-
-    frameCount++;
-    return {
-        frame: canvas.toBuffer('image/jpeg'),
-        metadata: metadata
-    };
+    stop() {
+        this.running = false;
+        this.push(null);
+    }
 }
 
-// Wysyłanie klatek co 333ms (3 FPS)
-setInterval(() => {
-    const { frame, metadata } = generateFrame();
-    // Tu należy dodać kod do wysyłania ramki przez RTSP
-    // Przykład wykorzystania node-media-server do publikowania strumienia
-    // nms.publish('stream', frame, metadata);
-}, 333);
+// Inicjalizacja serwera RTMP
+const nms = new NodeMediaServer(config);
+
+nms.on('preConnect', (id, args) => {
+    console.log('[PreConnect]', `id=${id}`, args);
+});
+
+nms.on('postConnect', (id, args) => {
+    console.log('[PostConnect]', `id=${id}`, args);
+});
+
+nms.on('prePublish', (id, StreamPath, args) => {
+    console.log('[PrePublish]', `id=${id} StreamPath=${StreamPath}`, args);
+});
+
+nms.run();
+
+// Inicjalizacja generatora strumienia
+const streamGenerator = new VideoStreamGenerator();
+
+// Uruchomienie FFmpeg jako osobny proces
+const ffmpeg = spawn('ffmpeg', [
+    '-f', 'image2pipe',
+    '-framerate', '3',
+    '-i', 'pipe:0',
+    '-c:v', 'libx264',
+    '-f', 'flv',
+    '-s', '640x480',
+    '-r', '3',
+    'rtmp://localhost:1935/live/stream'
+]);
+
+ffmpeg.stderr.on('data', (data) => {
+    console.log('FFmpeg:', data.toString());
+});
+
+ffmpeg.on('error', (error) => {
+    console.error('FFmpeg error:', error);
+});
+
+ffmpeg.on('exit', (code, signal) => {
+    console.log('FFmpeg zakończył działanie z kodem:', code);
+});
+
+// Podłączenie generatora do FFmpeg
+streamGenerator.pipe(ffmpeg.stdin);
+
+process.on('SIGINT', () => {
+    console.log('Zatrzymywanie...');
+    streamGenerator.stop();
+    ffmpeg.kill();
+    nms.stop();
+    process.exit();
+});
+

@@ -1,49 +1,82 @@
-// client.js
-import { createCanvas, loadImage } from 'canvas';
-import net from 'net';
 
-const client = new net.Socket();
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
-client.connect(5555, '127.0.0.1', () => {
-    console.log('Połączono z serwerem RTSP');
-});
+const RETRY_INTERVAL = 5000;
+const MAX_RETRIES = 5;
 
-let buffer = Buffer.alloc(0);
+export class RTSPClient {
+    constructor(port, host) {
+        this.port = port;
+        this.host = host;
+        this.retries = 0;
+        this.connected = false;
+        this.ffmpegProcess = null;
 
-client.on('data', (data) => {
-    buffer = Buffer.concat([buffer, data]);
+        if (!fs.existsSync('./received_frames')) {
+            fs.mkdirSync('./received_frames');
+        }
 
-    // Próba znalezienia kompletnej ramki
-    while (buffer.length > 0) {
-        // Tu należy zaimplementować logikę parsowania ramek RTSP
-        // i wyodrębniania metadanych
-
-        const frame = extractFrame(buffer);
-        if (!frame) break;
-
-        const metadata = extractMetadata(frame);
-        console.log('Odebrano klatkę z metadanymi:', metadata);
-
-        // Usunięcie przetworzonej ramki z bufora
-        buffer = buffer.slice(frame.length);
+        this.setupConnection();
     }
-});
 
-function extractFrame(buffer) {
-    // Implementacja wyodrębniania ramki z bufora
-    // W rzeczywistym przypadku należy zaimplementować
-    // właściwą logikę parsowania protokołu RTSP
-    return null;
+    setupConnection() {
+        try {
+            const streamUrl = `rtmp://${this.host}:${this.port}/live/stream`;
+            console.log(`Próba połączenia z ${streamUrl}`);
+
+            this.ffmpegProcess = spawn('ffmpeg', [
+                '-i', streamUrl,
+                '-vf', 'fps=3',
+                '-f', 'image2',
+                '-update', '1',
+                path.join('received_frames', 'frame%d.jpg')
+            ]);
+
+            this.ffmpegProcess.stderr.on('data', (data) => {
+                console.log('FFmpeg Client:', data.toString());
+            });
+
+            this.ffmpegProcess.on('error', (error) => {
+                console.error('Błąd FFmpeg:', error);
+                this.tryReconnect();
+            });
+
+            this.ffmpegProcess.on('exit', (code) => {
+                console.log('FFmpeg zakończył z kodem:', code);
+                if (code !== 0) {
+                    this.tryReconnect();
+                }
+            });
+
+            this.connected = true;
+        } catch (error) {
+            console.error('Błąd konfiguracji:', error);
+            this.tryReconnect();
+        }
+    }
+
+    tryReconnect() {
+        if (this.retries >= MAX_RETRIES) {
+            console.error('Przekroczono maksymalną liczbę prób połączenia');
+            return;
+        }
+
+        this.retries++;
+        console.log(`Ponowna próba połączenia (${this.retries}/${MAX_RETRIES}) za ${RETRY_INTERVAL/1000}s...`);
+
+        setTimeout(() => {
+            if (!this.connected) {
+                this.setupConnection();
+            }
+        }, RETRY_INTERVAL);
+    }
+
+    stop() {
+        if (this.ffmpegProcess) {
+            this.ffmpegProcess.kill();
+        }
+    }
 }
-
-function extractMetadata(frame) {
-    // Implementacja wyodrębniania metadanych z ramki
-    // W rzeczywistym przypadku należy zaimplementować
-    // właściwą logikę parsowania metadanych
-    return null;
-}
-
-client.on('close', () => {
-    console.log('Połączenie zamknięte');
-});
 
