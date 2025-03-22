@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2025-03-22
+
+### Added
+- Changes in index1.html
+- Changes in install_rtsp_server1.sh
+
 ## [0.1.3] - 2025-03-22
 
 ### Added

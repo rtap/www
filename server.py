@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # server.py
 import os
 from dotenv import load_dotenv
@@ -22,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 class Config:
     def __init__(self):
-        self.RTSP_URL = os.getenv('RTSP_URL', 'rtsp://localhost:554/stream')
+        self.RTSP_URL = os.getenv('RTSP_URL', 'rtsp://localhost:8554/stream')
         self.WS_PORT = int(os.getenv('WS_PORT', 5001))
-        self.RTSP_PORT = int(os.getenv('RTSP_PORT', 554))
+        self.RTSP_PORT = int(os.getenv('RTSP_PORT', 8554))
         self.RTSP_USERNAME = os.getenv('RTSP_USERNAME', 'admin')
         self.RTSP_PASSWORD = os.getenv('RTSP_PASSWORD', 'admin')
         self.MAX_RECONNECT_ATTEMPTS = int(os.getenv('MAX_RECONNECT_ATTEMPTS', 5))
