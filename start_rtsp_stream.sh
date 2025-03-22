@@ -1,46 +1,53 @@
 #!/bin/bash
 
-# Sprawdzenie, czy mediamtx jest zainstalowany
-if ! command -v mediamtx &> /dev/null; then
-    echo "Serwer RTSP (mediamtx) nie jest zainstalowany."
-    echo "Instalowanie serwera RTSP..."
-    
-    # Uruchomienie skryptu instalacyjnego
-    bash /home/tom/github/rtap/www/install_rtsp_server.sh
+echo "Uruchamianie generatora strumienia RTSP..."
+
+# Sprawdź, czy skrypty istnieją
+if [ ! -f "./install_rtsp_server.sh" ]; then
+    echo "Błąd: Nie znaleziono skryptu install_rtsp_server.sh"
+    exit 1
 fi
 
-# Uruchomienie serwera RTSP w tle
-echo "Uruchamianie serwera RTSP..."
-mediamtx &
-MEDIAMTX_PID=$!
+if [ ! -f "./generate_rtsp_stream.sh" ]; then
+    echo "Błąd: Nie znaleziono skryptu generate_rtsp_stream.sh"
+    exit 1
+fi
 
-# Daj serwerowi czas na uruchomienie
-sleep 2
+# Nadaj uprawnienia wykonywania, jeśli nie mają
+if [ ! -x "./install_rtsp_server.sh" ]; then
+    chmod +x ./install_rtsp_server.sh
+fi
 
-# Funkcja do zatrzymania wszystkich procesów przy wyjściu
-cleanup() {
-    echo "Zatrzymywanie strumienia i serwera..."
-    if [ ! -z "$FFMPEG_PID" ]; then
-        kill $FFMPEG_PID 2>/dev/null
-    fi
-    if [ ! -z "$MEDIAMTX_PID" ]; then
-        kill $MEDIAMTX_PID 2>/dev/null
-    fi
-    exit 0
-}
+if [ ! -x "./generate_rtsp_stream.sh" ]; then
+    chmod +x ./generate_rtsp_stream.sh
+fi
 
-# Przechwytywanie sygnałów zakończenia
-trap cleanup SIGINT SIGTERM
+# Sprawdź, czy MediaMTX jest zainstalowany
+if ! command -v mediamtx &> /dev/null; then
+    echo "MediaMTX nie jest zainstalowany. Instalowanie..."
+    ./install_rtsp_server.sh
+fi
 
-# Generowanie strumienia testowego i wysyłanie go do serwera RTSP
-echo "Generowanie strumienia testowego..."
-ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=30,format=yuv420p" \
-       -c:v libx264 -preset ultrafast -tune zerolatency -g 30 \
-       -f rtsp rtsp://localhost:8554/stream &
-FFMPEG_PID=$!
+# Sprawdź, czy port 8554 jest już używany
+if nc -z localhost 8554 2>/dev/null; then
+    echo "Serwer RTSP już działa na porcie 8554."
+else
+    echo "Uruchamianie serwera RTSP..."
+    # Uruchom MediaMTX w tle
+    mediamtx &
+    RTSP_SERVER_PID=$!
+    # Daj serwerowi czas na uruchomienie
+    sleep 2
+    echo "Serwer RTSP uruchomiony."
+fi
 
-echo "Strumień RTSP jest generowany na adresie: rtsp://localhost:8554/stream"
-echo "Naciśnij Ctrl+C, aby zatrzymać strumień i serwer."
+# Uruchom generator strumienia z opcją testowego wzoru
+echo "Uruchamianie generatora strumienia z testowym wzorem..."
+echo "1" | ./generate_rtsp_stream.sh
 
-# Czekanie na zakończenie FFmpeg
-wait $FFMPEG_PID
+# Informacja dla użytkownika
+echo ""
+echo "Strumień RTSP jest dostępny pod adresem: rtsp://localhost:8554/stream"
+echo "Możesz go przetestować za pomocą FFplay: ffplay rtsp://localhost:8554/stream"
+echo ""
+echo "Naciśnij Ctrl+C, aby zatrzymać strumień."
