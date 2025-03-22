@@ -101,7 +101,7 @@ case $SOURCE_TYPE in
         echo "Generowanie strumienia testowego..."
         ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=30,format=yuv420p" \
                -c:v libx264 -preset ultrafast -tune zerolatency -g 30 \
-               -f rtsp rtsp://localhost:8554/stream &
+               -f rtsp -rtsp_transport tcp rtsp://localhost:8554/stream &
         FFMPEG_PID=$!
         echo "Strumień RTSP jest generowany na adresie: rtsp://localhost:8554/stream"
         ;;
@@ -112,7 +112,7 @@ case $SOURCE_TYPE in
             ffmpeg -re -i "/home/tom/github/rtap/www/input.mp4" \
                    -c:v libx264 -preset ultrafast -tune zerolatency -g 30 \
                    -c:a aac -b:a 128k \
-                   -f rtsp rtsp://localhost:8554/stream &
+                   -f rtsp -rtsp_transport tcp rtsp://localhost:8554/stream &
             FFMPEG_PID=$!
             echo "Strumień RTSP jest generowany na adresie: rtsp://localhost:8554/stream"
         else
@@ -130,7 +130,7 @@ case $SOURCE_TYPE in
         if [ -c /dev/video0 ]; then
             ffmpeg -f v4l2 -framerate 30 -video_size 1280x720 -i /dev/video0 \
                    -c:v libx264 -preset ultrafast -tune zerolatency -g 30 \
-                   -f rtsp rtsp://localhost:8554/stream &
+                   -f rtsp -rtsp_transport tcp rtsp://localhost:8554/stream &
             FFMPEG_PID=$!
             echo "Strumień RTSP jest generowany na adresie: rtsp://localhost:8554/stream"
         else
@@ -146,7 +146,7 @@ case $SOURCE_TYPE in
         echo "Nieprawidłowa opcja. Generowanie strumienia testowego..."
         ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=30,format=yuv420p" \
                -c:v libx264 -preset ultrafast -tune zerolatency -g 30 \
-               -f rtsp rtsp://localhost:8554/stream &
+               -f rtsp -rtsp_transport tcp rtsp://localhost:8554/stream &
         FFMPEG_PID=$!
         echo "Strumień RTSP jest generowany na adresie: rtsp://localhost:8554/stream"
         ;;

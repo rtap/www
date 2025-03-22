@@ -1,0 +1,10 @@
+# Konfiguracja serwera RTSP
+paths:
+  stream:
+    # Ścieżka dla strumienia rtsp://localhost:8554/stream
+    readUser: ""
+    readPass: ""
+    publishUser: ""
+    publishPass: ""
+    # Zezwól na publikowanie bez uwierzytelniania
+    allowPublish: yes

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2025-03-22
+
+### Added
+- Changes in fix_rtsp_stream.sh
+- Changes in gstreamer_rtsp.sh
+- Changes in rtsp/mediamtx.yml
+- Changes in rtsp/server.sh
+- Changes in test_rtsp.sh
+
+### Changed
+- Changes in generate_rtsp_stream.sh
+- Changes in install_rtsp_server.sh
+- Changes in mediamtx.yml
+- Changes in rtsp/client.sh
+- Changes in start_rtsp_stream.sh
+
 ## [0.1.2] - 2025-03-22
 
 ## [0.1.1] - 2025-03-22

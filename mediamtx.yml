@@ -1,8 +1,4 @@
-# Konfiguracja serwera RTSP
+rtspAddress: :8554
 paths:
   stream:
-    # Ścieżka dla strumienia rtsp://localhost:8554/stream
-    readUser: ""
-    readPass: ""
-    publishUser: ""
-    publishPass: ""
+    runOnPublish: ffmpeg -i rtsp://localhost:8554/stream -c copy -f mpegts pipe:1

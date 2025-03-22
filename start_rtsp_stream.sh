@@ -1,4 +1,12 @@
 #!/bin/bash
+set -e  # Exit on error
+
+# Function for error handling
+handle_error() {
+  echo "Error occurred at line $LINENO"
+  exit 1
+}
+trap 'handle_error $LINENO' ERR
 
 echo "Uruchamianie generatora strumienia RTSP..."
 
@@ -28,18 +36,28 @@ if ! command -v mediamtx &> /dev/null; then
     ./install_rtsp_server.sh
 fi
 
-# Sprawdź, czy port 8554 jest już używany
+# Zatrzymaj istniejący serwer RTSP, jeśli działa
 if nc -z localhost 8554 2>/dev/null; then
-    echo "Serwer RTSP już działa na porcie 8554."
-else
-    echo "Uruchamianie serwera RTSP..."
-    # Uruchom MediaMTX w tle
-    mediamtx &
-    RTSP_SERVER_PID=$!
-    # Daj serwerowi czas na uruchomienie
+    echo "Zatrzymywanie istniejącego serwera RTSP..."
+    pkill mediamtx || true  # Don't fail if no process is running
     sleep 2
-    echo "Serwer RTSP uruchomiony."
 fi
+
+echo "Uruchamianie serwera RTSP z nową konfiguracją..."
+# Uruchom MediaMTX w tle z naszym plikiem konfiguracyjnym
+mediamtx &
+RTSP_SERVER_PID=$!
+
+# Daj serwerowi czas na uruchomienie
+sleep 2
+
+# Sprawdź, czy serwer faktycznie działa
+if ! nc -z localhost 8554 2>/dev/null; then
+    echo "Błąd: Nie udało się uruchomić serwera RTSP"
+    exit 1
+fi
+
+echo "Serwer RTSP uruchomiony."
 
 # Uruchom generator strumienia z opcją testowego wzoru
 echo "Uruchamianie generatora strumienia z testowym wzorem..."
@@ -51,3 +69,12 @@ echo "Strumień RTSP jest dostępny pod adresem: rtsp://localhost:8554/stream"
 echo "Możesz go przetestować za pomocą FFplay: ffplay rtsp://localhost:8554/stream"
 echo ""
 echo "Naciśnij Ctrl+C, aby zatrzymać strumień."
+
+# Dodaj obsługę sygnału przerwania, aby poprawnie zamknąć procesy
+cleanup() {
+    echo "Zatrzymywanie serwera RTSP..."
+    pkill mediamtx || true
+    exit 0
+}
+trap cleanup INT TERM
+wait $RTSP_SERVER_PID
