@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2025-03-22
+
+### Added
+- Changes in templates/index.html
+- Changes in templates/index1.html
+- Changes in websocket_server.py
+
 ## [0.1.4] - 2025-03-22
 
 ### Added

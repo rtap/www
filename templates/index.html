@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Client</title>
+</head>
+<body>
+    <h1>WebSocket Client</h1>
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+        const ws = new WebSocket('ws://localhost:5002');
+
+        ws.addEventListener('open', (event) => {
+            output.innerHTML += '<p>Connected to WebSocket server</p>';
+            ws.send(JSON.stringify({ type: 'SETUP', rtspUrl: 'rtsp://localhost:8554/stream' }));
+        });
+
+        ws.addEventListener('message', (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'status') {
+                output.innerHTML += `<p>Status: ${message.status}</p>`;
+            } else if (message.type === 'metadata') {
+                output.innerHTML += `<p>Metadata: ${JSON.stringify(message.data)}</p>`;
+            } else if (message.type === 'error') {
+                output.innerHTML += `<p>Error: ${message.message}</p>`;
+            }
+        });
+
+        ws.addEventListener('close', (event) => {
+            output.innerHTML += '<p>Disconnected from WebSocket server</p>';
+        });
+
+        ws.addEventListener('error', (event) => {
+            output.innerHTML += `<p>WebSocket error: ${event.message}</p>`;
+        });
+    </script>
+</body>
+</html>
