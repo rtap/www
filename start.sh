@@ -39,3 +39,12 @@ rm -rf media/live/*
 
 # Uruchom aplikację
 DEBUG=node-media-server node run.js
+
+ffplay -flags2 +export_mvs rtmp://localhost:1935/live/stream
+
+
+sudo dnf install tesseract tesseract-devel leptonica-devel
+npm install node-media-server canvas moment
+
+ffplay rtmp://localhost:1935/live/stream
+vlc rtmp://localhost:1935/live/stream

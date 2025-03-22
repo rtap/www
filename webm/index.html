@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Timestamped Video Playlist</title>
+    <style>
+        #video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            overflow: hidden;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+        }
+
+        #time-display, #segment-display {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+<div id="time-display"></div>
+<div id="segment-display"></div>
+<div id="video-container">
+    <video id="videoPlayer" controls autoplay>
+        <source id="videoSource" src="" type="video/webm">
+        Your browser does not support the video tag.
+    </video>
+</div>
+<button onclick="loadNextSegment()">Next</button>
+
+<script>
+    let basePath = '';
+    let videoPlayer = document.getElementById('videoPlayer');
+    let videoSource = document.getElementById('videoSource');
+    let recentTimestamp = '';
+    let segmentList = [];
+
+
+    // Funkcja do pokazywania aktualnego czasu
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('time-display').textContent = `Aktualny czas (UTC): ${now.toISOString().split('.')[0].replace('T', ' ')}`;
+
+        const timestamp = new Date().toISOString().replace(/[-:TZ]/g, '').split('.')[0];
+        const filename = `video_segment_${timestamp}.webm`;
+        document.getElementById('segment-display').textContent = `Aktualnie wyświetlany plik: ${filename}`;
+
+    }
+
+    // Ustawienie czasomierza do aktualizacji co sekundę
+    setInterval(updateTime, 1000);
+
+    async function loadNextSegment() {
+        const now = new Date().toISOString().replace(/[-:TZ]/g, '').split('.')[0];
+        if (recentTimestamp && recentTimestamp >= now) {
+            console.log('Poczekaj na nowszy segment lub przeładuj...');
+        } else {
+            await checkForNewSegment();
+            playSegment(recentTimestamp);
+        }
+    }
+
+    async function checkForNewSegment() {
+        // Symulacja pobierania listy dostępnych plików z serwera
+        const response = await fetch('/list_segments'); // Przykładowa trasa do API
+        const segments = await response.json(); // Zakładamy, że zwrócona lista to JSON z nazwami plików
+        segmentList = segments;
+        recentTimestamp = segmentList.sort().reverse()[0]; // Zakładamy, że segmenty są posortowane chronologicznie.
+    }
+
+    function playSegment(timestamp) {
+        if (!timestamp) return;
+        const filename = `video_segment_${timestamp}.webm`;
+        const src = `${basePath}${filename}`;
+        videoSource.src = src;
+        videoPlayer.load();
+        videoPlayer.play();
+        document.getElementById('segment-display').textContent = `Aktualnie wyświetlany plik: ${filename}`;
+    }
+
+    // Początkowa inicjacja
+    window.onload = async function() {
+        await checkForNewSegment();
+        if (segmentList.length > 0) {
+            playSegment(recentTimestamp);
+        }
+    };
+</script>
+</body>
+</html>

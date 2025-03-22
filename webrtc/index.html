@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebRTC Stream with Interaction</title>
+    <style>
+        #videoContainer {
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none; /* umożliwia interakcję z video */
+        }
+
+        .interactive-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+<div id="videoContainer">
+    <video id="videoElement" autoplay></video>
+    <svg class="overlay">
+        <rect x="10" y="10" width="100" height="100" fill="red" opacity="0.5"/>
+        <!-- Możesz dodać więcej elementów do interakcji -->
+    </svg>
+    <div class="interactive-text" id="interactiveContent">
+        <p>Get access to exclusive content!</p>
+        <button onclick="showPaymentForm()">Pay Now</button>
+        <button onclick="startQuiz()">Start Quiz</button>
+    </div>
+</div>
+
+<div id="paymentForm" style="display: none;">
+    <!-- Integracja z API płatności, np. Stripe -->
+    <p>Płatność: 10 USD</p>
+    <button onclick="completePayment()">Complete Payment</button>
+</div>
+
+<script>
+    let videoElement = document.getElementById('videoElement');
+    let interactiveContent = document.getElementById('interactiveContent');
+    let paymentForm = document.getElementById('paymentForm');
+
+    // Połączenie WebRTC
+    function startWebRTC() {
+        // Tutaj musisz zainicjować sesję WebRTC poprzez Janus/Kurento
+        // To miejsce na kod połączenia WebRTC.
+        console.log("WebRTC session starting...");
+    }
+
+    function showPaymentForm() {
+        interactiveContent.style.display = 'none';
+        paymentForm.style.display = 'block';
+    }
+
+    function completePayment() {
+        alert("Payment Completed!");
+        paymentForm.style.display = 'none';
+        interactiveContent.style.display = 'block';
+    }
+
+    function startQuiz() {
+        let answer = prompt("What's 2 + 2?");
+        if (answer == "4") {
+            alert("Correct! Access granted.");
+        } else {
+            alert("Incorrect! Try again.");
+        }
+    }
+
+    startWebRTC();
+</script>
+</body>
+</html>

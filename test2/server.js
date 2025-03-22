@@ -1,4 +1,3 @@
-
 // server.js
 import { createCanvas } from 'canvas';
 import NodeMediaServer from 'node-media-server';
@@ -7,7 +6,6 @@ import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import fs from 'fs';
 
-// Upewnij się, że katalogi istnieją
 if (!fs.existsSync('./media/live')) {
     fs.mkdirSync('./media/live', { recursive: true });
 }
@@ -26,6 +24,29 @@ const config = {
         allow_origin: '*'
     }
 };
+
+const nms = new NodeMediaServer(config);
+
+// Dodanie obsługi metadanych w serwerze RTMP
+nms.on('prePublish', (id, StreamPath, args) => {
+    console.log('[PrePublish]', `id=${id} StreamPath=${StreamPath}`, args);
+});
+
+nms.on('postPublish', (id, StreamPath, args) => {
+    console.log('[PostPublish]', `id=${id} StreamPath=${StreamPath}`, args);
+    // Wysyłanie metadanych do strumienia
+    const session = nms.getSession(id);
+    if (session) {
+        session.sendStreamStatus(StreamPath, {
+            width: 640,
+            height: 480,
+            fps: 3,
+            codec: 'h264'
+        });
+    }
+});
+
+nms.run();
 
 class VideoStreamGenerator extends Readable {
     constructor(options) {
@@ -58,18 +79,18 @@ class VideoStreamGenerator extends Readable {
                 const x = this.frameCount % 580;
                 this.ctx.fillRect(x, 200, 60, 60);
 
-                // Metadane
+                // Przygotowanie metadanych jako tekstu na klatce
                 const metadata = {
                     timestamp: moment().format('YYYY-MM-DD HH:mm:ss.SSS'),
                     frameNumber: this.frameCount,
-                    objectPosition: { x, y: 200 },
-                    // random: randomInt(1000, 9999)
+                    objectPosition: { x, y: 200 }
                 };
 
-                // Dodanie tekstu metadanych na klatkę
+                // Dodanie metadanych jako tekst w specjalnym formacie
                 this.ctx.fillStyle = 'white';
                 this.ctx.font = '12px Arial';
-                this.ctx.fillText(JSON.stringify(metadata), 10, 20);
+                this.ctx.fillText(`METADATA:${JSON.stringify(metadata)}`, 10, 470);
+                this.ctx.fillText(`Frame: ${this.frameCount}`, 10, 20);
 
                 this.frameCount++;
 
@@ -87,22 +108,21 @@ class VideoStreamGenerator extends Readable {
     }
 }
 
-const nms = new NodeMediaServer(config);
-nms.run();
-
 const streamGenerator = new VideoStreamGenerator();
 
-// Użyj FFmpeg do publikowania strumienia
+// FFmpeg z konfiguracją dla przesyłania metadanych
 const ffmpegPublish = spawn('ffmpeg', [
-    '-re',  // Odtwarzanie z prędkością rzeczywistą
+    '-re',
     '-f', 'image2pipe',
     '-framerate', '3',
     '-i', '-',
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-tune', 'zerolatency',
+    '-movflags', '+faststart',
+    '-metadata', 'encoder=ffmpeg',
+    '-metadata', 'creation_time=now',
     '-f', 'flv',
-    '-flvflags', 'no_duration_filesize',
     'rtmp://localhost:1935/live/stream'
 ]);
 
