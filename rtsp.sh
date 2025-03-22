@@ -3,7 +3,6 @@
 ffmpeg -re -i output.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 ffmpeg -re -i meta.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
-ffmpeg -re -i input.mp4 -c:v copy -f rtsp rtsp://localhost:8554/mystream
 
 #echo rtsp://localhost:8554/mystream
 #vlc rtsp://localhost:8554/mystream

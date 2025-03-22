@@ -40,7 +40,8 @@ def stream_video_to_rtsp():
     # Using VLC's sout function for setting up RTSP
     vlc_instance = vlc.Instance()
     media_player = vlc_instance.media_player_new()
-    media = vlc_instance.media_new('file:///path/to/input.mp4')
+    #media = vlc_instance.media_new('file:///path/to/input.mp4')
+    media = vlc_instance.media_new('input.mp4')
 
     # Configure RTP/RTSP Stream Output
     media.add_option("sout=#rtp{mux=ts,dst=localhost,port=8554,sdp=rtsp://localhost:8554/stream}")
@@ -60,6 +61,4 @@ def stream_video_to_rtsp():
 
 if __name__ == '__main__':
     stream_video_to_rtsp()
-
-if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
